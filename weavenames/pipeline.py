@@ -124,12 +124,14 @@ async def _check_one(
         check_github_user(candidate.name, client),
         check_github_repo(candidate.name, client),
     ]
-    results = await asyncio.gather(*coros, return_exceptions=True)
+    results: list[AvailabilityResult | BaseException] = await asyncio.gather(
+        *coros, return_exceptions=True
+    )
     domain_map = await check_domains(candidate.name, tlds, client)
 
     avail: dict[str, AvailabilityResult] = {}
     for r in results:
-        if isinstance(r, Exception):
+        if isinstance(r, BaseException):
             continue
         avail[r.registry] = r
     avail.update(domain_map)
@@ -167,12 +169,12 @@ async def _trademark_phase(
 ) -> list[Candidate]:
     timeout = httpx.Timeout(30.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        results = await asyncio.gather(
+        results: list[AvailabilityResult | BaseException] = await asyncio.gather(
             *[check_trademark(c.name, client) for c in candidates],
             return_exceptions=True,
         )
     for c, r in zip(candidates, results):
-        if isinstance(r, Exception):
+        if isinstance(r, BaseException):
             continue
         c.availability["trademark"] = r
         if r.raw and "hits" in r.raw:

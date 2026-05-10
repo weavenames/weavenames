@@ -166,14 +166,14 @@ async def check_domains(
 ) -> dict[str, AvailabilityResult]:
     """Fan out across all TLDs concurrently. Returns map registry → result."""
 
-    results = await asyncio.gather(
+    results: list[AvailabilityResult | BaseException] = await asyncio.gather(
         *[check_domain(name, t, client) for t in tlds],
         return_exceptions=True,
     )
     out: dict[str, AvailabilityResult] = {}
     for tld, r in zip(tlds, results):
         registry = f"domain:{tld}"
-        if isinstance(r, Exception):
+        if isinstance(r, BaseException):
             out[registry] = AvailabilityResult(
                 registry=registry,
                 name=f"{name.lower()}{tld}",

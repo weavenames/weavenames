@@ -29,6 +29,7 @@ import random
 from dataclasses import dataclass
 
 from anthropic import AsyncAnthropic
+from anthropic.types import TextBlock
 
 from weavenames.models import Candidate
 
@@ -91,7 +92,7 @@ async def _judge_pair(
         except Exception:
             return "TIE"
     text = "".join(
-        block.text for block in msg.content if getattr(block, "type", None) == "text"
+        block.text for block in msg.content if isinstance(block, TextBlock)
     ).strip().upper()
     # Take the first letter — model usually emits a single token.
     if text.startswith("A"):

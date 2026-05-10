@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from better_profanity import profanity
+from better_profanity import profanity  # type: ignore[import-untyped]
 
 from weavenames.data import collisions, known_packages
 

@@ -17,7 +17,14 @@ DEFAULT_PROFILE_PATH = Path.home() / ".weavenames" / "profile.json"
 
 def profile_path() -> Path:
     override = os.environ.get("WEAVENAMES_PROFILE")
-    return Path(override) if override else DEFAULT_PROFILE_PATH
+    if override:
+        p = Path(override)
+        if not p.is_absolute():
+            raise ValueError(
+                f"WEAVENAMES_PROFILE must be an absolute path, got: {override!r}"
+            )
+        return p
+    return DEFAULT_PROFILE_PATH
 
 
 def load(path: Path | None = None) -> TasteProfile:

@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 
 from anthropic import AsyncAnthropic
+from anthropic.types import TextBlock
 
 from weavenames.models import TasteProfile
 
@@ -121,7 +122,7 @@ async def _generate_batch(
     )
     # Concatenate all text blocks the response returns.
     text = "".join(
-        block.text for block in msg.content if getattr(block, "type", None) == "text"
+        block.text for block in msg.content if isinstance(block, TextBlock)
     )
     return _parse_response(text)
 
@@ -155,7 +156,7 @@ async def generate_candidates(
     seen: set[str] = set()
     unique: list[str] = []
     for batch in results:
-        if isinstance(batch, Exception):
+        if isinstance(batch, BaseException):
             # One bad batch should not nuke the run; we'll just have fewer
             # candidates. The orchestrator can decide what to do with the
             # final count.

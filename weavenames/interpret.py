@@ -29,7 +29,10 @@ from weavenames.models import AvailabilityResult, Candidate
 
 USER_AGENT = "weavenames/0.1 (+https://github.com/weavenames/weavenames)"
 SQUATTER_INACTIVITY_DAYS = 730  # 2 years
-SOFT_CLAIM_RECENT_WINDOW_DAYS = 90  # zero downloads in last 90 days
+# TODO Phase 2: 90-day download-count signal via pypistats.org. The /pypi/<name>/json
+# endpoint does not return download stats; we'd need a separate
+# `pypistats.org/api/packages/<name>/recent` call. Deferred — the 2-year inactivity
+# signal above is the working squatter heuristic for v1.
 
 
 def _parse_iso(s: str | None) -> datetime | None:

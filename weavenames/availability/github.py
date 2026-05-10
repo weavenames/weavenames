@@ -17,7 +17,7 @@ import os
 
 import httpx
 
-from weavenames.models import AvailabilityResult
+from weavenames.models import AvailabilityResult, AvailabilityStatus
 
 USER_URL = "https://api.github.com/users/{name}"
 SEARCH_URL = "https://api.github.com/search/repositories"
@@ -129,7 +129,7 @@ async def check_github_repo(name: str, client: httpx.AsyncClient) -> Availabilit
     flags: list[str] = []
     if total > 0:
         flags.append(f"{total} repo(s) match")
-    status = "taken" if total > 0 else "free"
+    status: AvailabilityStatus = "taken" if total > 0 else "free"
     return AvailabilityResult(
         registry="github_repo",
         name=name,
