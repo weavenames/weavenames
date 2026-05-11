@@ -18,14 +18,14 @@ Auth resolution order (see ``complete``):
 
 1. **Explicit ``api_key`` arg** — for tests and explicit override. Forces
    the ``anthropic`` SDK path regardless of environment.
-2. **Claude Code OAuth via ``claude-agent-sdk``** — selected when
-   ``CLAUDECODE=1`` is set in the environment (the canonical signal that
-   we are running inside a Claude Code session) AND the SDK is importable.
-   On any runtime failure here we surface the error rather than silently
-   falling through; the whole point of this branch is to bill OAuth, not
-   the API key.
-3. **``ANTHROPIC_API_KEY`` env var via the ``anthropic`` SDK** — used when
-   we are not in a Claude Code session.
+2. **``ANTHROPIC_API_KEY`` env var via the ``anthropic`` SDK** — if the
+   user has explicitly exported an API key, honor it. This matches the
+   underlying Claude CLI's own precedence (the CLI also picks env API
+   key over OAuth session when both are present). Users who want OAuth
+   despite having a key exported should ``unset ANTHROPIC_API_KEY``.
+3. **Claude Code OAuth via ``claude-agent-sdk``** — selected when
+   ``CLAUDECODE=1`` is set (the harness signal) AND the SDK is importable
+   AND no env API key is set. Free under a Max / Pro subscription.
 4. **``RuntimeError``** with a helpful message if none of the above
    resolve.
 
@@ -84,20 +84,16 @@ async def _complete_via_agent_sdk(
         query,
     )
 
-    # Scrub ANTHROPIC_API_KEY from the env we pass to the SDK subprocess.
-    # If both signals are present, the user almost certainly wants OAuth
-    # (free) instead of API key (paid). Leaving the key in the env risks
-    # the CLI billing the API key path.
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-
     options = ClaudeAgentOptions(
         system_prompt=system,
         model=model,
         max_turns=1,
         allowed_tools=[],
-        # setting_sources=None (default) means the CLI does NOT load the
-        # user's CLAUDE.md, project settings, or skills. Fully isolated.
-        env=env,
+        # setting_sources=[] explicitly disables loading of CLAUDE.md,
+        # project settings, and skills. The SDK's default (None) loads
+        # them all, which would leak the caller's environment into our
+        # tiny pairwise / generation prompts.
+        setting_sources=[],
     )
 
     chunks: list[str] = []
@@ -162,9 +158,11 @@ async def complete(
     Resolution order:
 
     1. Explicit ``api_key`` — forces the ``anthropic`` SDK path.
-    2. Claude Code OAuth (``CLAUDECODE=1`` env + ``claude-agent-sdk``
+    2. ``ANTHROPIC_API_KEY`` env var via the ``anthropic`` SDK. If you've
+       exported a key, we honor it — this matches the underlying Claude
+       CLI's own precedence behavior.
+    3. Claude Code OAuth (``CLAUDECODE=1`` + ``claude-agent-sdk``
        importable) — free under a Max / Pro subscription.
-    3. ``ANTHROPIC_API_KEY`` env var via the ``anthropic`` SDK.
     4. Otherwise: ``RuntimeError``.
 
     Args:
@@ -173,8 +171,8 @@ async def complete(
         model: Model identifier (e.g. ``claude-haiku-4-5-20251001``).
         max_tokens: Response cap. Honored on the API-key path; ignored on
             the OAuth path (the SDK does not expose a per-call token cap).
-        api_key: Explicit API key. When set, bypasses OAuth and uses the
-            ``anthropic`` SDK directly. Primarily for tests.
+        api_key: Explicit API key. When set, bypasses other resolution
+            and uses the ``anthropic`` SDK directly. Primarily for tests.
 
     Returns:
         The concatenated text from the assistant's response.
@@ -190,21 +188,10 @@ async def complete(
             api_key=api_key,
         )
 
-    # 2. OAuth via Claude Code, if available.
-    if _in_claude_code_session():
-        try:
-            import claude_agent_sdk  # noqa: F401
-        except ImportError:
-            # SDK not installed for some reason — fall through to API key.
-            pass
-        else:
-            return await _complete_via_agent_sdk(
-                system=system,
-                user=user,
-                model=model,
-            )
-
-    # 3. API key from env.
+    # 2. Env API key — if explicitly exported, honor it. Matches CLI
+    #    precedence and avoids the silent-billing footgun where OAuth
+    #    would appear to be in use but the CLI still picks up the env
+    #    key under the hood.
     env_key = os.environ.get("ANTHROPIC_API_KEY")
     if env_key:
         return await _complete_via_anthropic_sdk(
@@ -214,6 +201,20 @@ async def complete(
             max_tokens=max_tokens,
             api_key=env_key,
         )
+
+    # 3. OAuth via Claude Code.
+    if _in_claude_code_session():
+        try:
+            import claude_agent_sdk  # noqa: F401
+        except ImportError:
+            # SDK not installed — fall through to RuntimeError below.
+            pass
+        else:
+            return await _complete_via_agent_sdk(
+                system=system,
+                user=user,
+                model=model,
+            )
 
     # 4. No auth at all.
     raise RuntimeError(

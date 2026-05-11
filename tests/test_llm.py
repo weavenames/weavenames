@@ -77,11 +77,37 @@ def test_explicit_api_key_routes_to_anthropic_sdk(monkeypatch):
     assert oauth_calls == []
 
 
-def test_claude_code_session_routes_to_oauth(monkeypatch):
-    """CLAUDECODE=1 + SDK importable -> OAuth path, ignoring env API key."""
+def test_env_api_key_wins_over_oauth_when_both_present(monkeypatch):
+    """ANTHROPIC_API_KEY in env wins over CLAUDECODE — matches CLI precedence.
+
+    The Claude CLI itself uses env API key over OAuth when both are present;
+    we mirror that to avoid silent billing (user thinks they're on OAuth
+    but the underlying CLI charges the env key).
+    """
 
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
+
+    anth_calls, anth_fake = _make_fake_anthropic_call()
+    oauth_calls, oauth_fake = _make_fake_oauth_call()
+    monkeypatch.setattr(llm, "_complete_via_anthropic_sdk", anth_fake)
+    monkeypatch.setattr(llm, "_complete_via_agent_sdk", oauth_fake)
+
+    out = asyncio.run(
+        llm.complete(system="sys", user="usr", model="m", max_tokens=10)
+    )
+
+    assert out == "anthropic-text"
+    assert len(anth_calls) == 1
+    assert anth_calls[0]["api_key"] == "env-key"
+    assert oauth_calls == []
+
+
+def test_oauth_fires_when_only_claude_code_signal_present(monkeypatch):
+    """CLAUDECODE=1 with no env API key -> OAuth path."""
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
     anth_calls, anth_fake = _make_fake_anthropic_call()
     oauth_calls, oauth_fake = _make_fake_oauth_call()

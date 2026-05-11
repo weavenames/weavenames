@@ -31,7 +31,6 @@ import asyncio
 import os
 import random
 from dataclasses import dataclass
-from typing import Any
 
 from weavenames.llm import complete
 from weavenames.models import Candidate
@@ -74,7 +73,7 @@ def _user_prompt(description: str, a: str, b: str) -> str:
 
 
 async def _judge_pair(
-    client: Any,
+    client: str | None,
     cfg: RankConfig,
     a: str,
     b: str,
@@ -82,15 +81,12 @@ async def _judge_pair(
 ) -> str:
     """Returns 'A', 'B', or 'TIE'. Defaults to 'TIE' on parse failure.
 
-    The ``client`` parameter is retained for signature stability — existing
-    tests monkeypatch this function with a 5-arg fake. The actual transport
-    is owned by :mod:`weavenames.llm`; ``client`` is unused at runtime but
-    may carry an explicit API-key override passed through from the caller.
+    The ``client`` parameter is a string-or-None API key override (legacy
+    name from when this slot carried an ``AsyncAnthropic`` instance). The
+    actual transport is owned by :mod:`weavenames.llm`. Tests monkeypatch
+    this whole function with a 5-arg fake — the signature is preserved
+    on purpose.
     """
-
-    # Extract optional api_key override that rank_candidates may attach to
-    # the client slot. Pure-string override keeps the test signature stable.
-    api_key = client if isinstance(client, str) and client else None
 
     async with sem:
         try:
@@ -99,7 +95,7 @@ async def _judge_pair(
                 user=_user_prompt(cfg.description, a, b),
                 model=cfg.model,
                 max_tokens=8,
-                api_key=api_key,
+                api_key=client or None,
             )
         except Exception:
             return "TIE"
@@ -155,19 +151,15 @@ async def rank_candidates(
         c.scores.pairwise_fit = 0.5
         return [c]
 
-    # Bail to neutral if we have neither auth path available. This
-    # preserves the prior behavior where running without an API key
-    # returned neutral pairwise_fit instead of crashing the pipeline.
+    # Bail to neutral when no auth is available, or when the caller
+    # explicitly opted out via api_key="". Pairwise ranking is one signal
+    # of several — the rest of the pipeline still produces a useful
+    # report without it, so we degrade rather than crash.
     has_oauth = os.environ.get("CLAUDECODE") == "1"
     has_env_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    if not api_key and not has_oauth and not has_env_key:
-        for c in candidates:
-            c.scores.pairwise_fit = 0.5
-        return candidates
-
-    # Caller passed an explicitly empty string to opt out — preserve old
-    # contract from tests/test_rank.py::test_rank_no_api_key_returns_neutral.
-    if api_key == "":
+    no_auth_available = not has_oauth and not has_env_key
+    opted_out = api_key == ""
+    if (not api_key and no_auth_available) or opted_out:
         for c in candidates:
             c.scores.pairwise_fit = 0.5
         return candidates
@@ -181,7 +173,7 @@ async def rank_candidates(
     # The "client" slot carries an optional explicit api_key through to
     # _judge_pair. Tests monkeypatch _judge_pair entirely so this value
     # is never inspected in test paths.
-    client_slot: Any = api_key if api_key else None
+    client_slot: str | None = api_key if api_key else None
 
     last_top: list[str] = []
     consecutive_stable = 0
