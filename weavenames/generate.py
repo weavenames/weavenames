@@ -3,18 +3,18 @@
 Generates ~200 candidates in batches of 50, parallelized with asyncio.gather.
 Output is deduplicated and lightly normalized. The taste profile, if present,
 is woven into the system prompt as anchors and anti-anchors.
+
+Transport is delegated to :mod:`weavenames.llm`, which picks Claude Code
+OAuth (free under a Max subscription) or an ``ANTHROPIC_API_KEY`` fallback.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 from dataclasses import dataclass
 
-from anthropic import AsyncAnthropic
-from anthropic.types import TextBlock
-
+from weavenames.llm import complete
 from weavenames.models import TasteProfile
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -102,27 +102,20 @@ def _parse_response(text: str) -> list[str]:
 
 
 async def _generate_batch(
-    client: AsyncAnthropic,
     cfg: GenerationConfig,
     profile: TasteProfile,
     batch_size: int,
+    *,
+    api_key: str | None = None,
 ) -> list[str]:
-    msg = await client.messages.create(
+    text = await complete(
+        system=_build_system_prompt(profile),
+        user=_build_user_prompt(
+            cfg.description, cfg.keywords, cfg.negative_examples, batch_size
+        ),
         model=cfg.model,
         max_tokens=2048,
-        system=_build_system_prompt(profile),
-        messages=[
-            {
-                "role": "user",
-                "content": _build_user_prompt(
-                    cfg.description, cfg.keywords, cfg.negative_examples, batch_size
-                ),
-            }
-        ],
-    )
-    # Concatenate all text blocks the response returns.
-    text = "".join(
-        block.text for block in msg.content if isinstance(block, TextBlock)
+        api_key=api_key,
     )
     return _parse_response(text)
 
@@ -133,25 +126,22 @@ async def generate_candidates(
     *,
     api_key: str | None = None,
 ) -> list[str]:
-    """Generate ~target_count deduplicated candidates."""
+    """Generate ~target_count deduplicated candidates.
 
-    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY not set. Export it or pass --api-key."
-        )
+    Auth resolution is delegated to :func:`weavenames.llm.complete`. The
+    ``api_key`` arg, if provided, forces the API-key path; otherwise
+    Claude Code OAuth is preferred when available.
+    """
 
-    client = AsyncAnthropic(api_key=api_key)
     n_batches = max(1, (cfg.target_count + cfg.batch_size - 1) // cfg.batch_size)
 
-    async with client:
-        results = await asyncio.gather(
-            *[
-                _generate_batch(client, cfg, profile, cfg.batch_size)
-                for _ in range(n_batches)
-            ],
-            return_exceptions=True,
-        )
+    results = await asyncio.gather(
+        *[
+            _generate_batch(cfg, profile, cfg.batch_size, api_key=api_key)
+            for _ in range(n_batches)
+        ],
+        return_exceptions=True,
+    )
 
     seen: set[str] = set()
     unique: list[str] = []
