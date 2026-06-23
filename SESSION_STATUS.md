@@ -37,9 +37,23 @@
       descriptive working slug, so no rename. Report proved health, that was the point.
 - [ ] Address watch-outs from Alfred (silent TIE on judge failure, missing buy-links in report, crates.io/Docker Hub not yet implemented)
 - [ ] Bump to v0.1.0 and publish real pipeline to PyPI/npm (replace stub)
-- [ ] **Consumer-app mode (NEW, surfaced by the 2026-06-23 dogfood).** Pointed at a `.dmg` Mac
-      app, the PyPI/npm/GitHub columns are noise, only .com + trademark + App-Store-name matter.
-      Add a target-type flag that weights domain/TM and drops package registries from scoring.
+- [ ] **Greenfield-.com gate (NEW, the real bug from the 2026-06-23 dogfood).** Headline promise
+      is a free .com, but `_availability_score` (pipeline.py:83) is a WEIGHTED AVERAGE across all
+      registries, so a dead .com gets averaged back up by free PyPI/npm/.ai and taken-.com names
+      out-rank the one clean one. Fix: in greenfield mode a taken primary TLD must HARD-GATE
+      (disqualify or near-zero the composite), not contribute as one weighted term. .com weight
+      of 1.0 is not enough when free package registries can compensate.
+- [ ] **.com check reliability (NEW).** Verisign rate-limits .com RDAP; domains.py:97 retries
+      ONCE then returns status="error" (the `❓` glyph). On a 60-name batch most .com checks never
+      resolve, so the gate above would run on garbage. Needs backoff + more retries (or a WHOIS
+      fallback) for .com specifically. Also: define the `error`-status multiplier so `❓` doesn't
+      score as neutral-available.
+- [ ] **Generation taste is weak (NEW, deferred to its own window).** Output was startup-mush
+      (`clayix`, `brimox`, `zenolia`); the evocative names all had taken .coms. This is a
+      `generate.py` prompt/guardrail tuning loop, separate from the ranking bugs above. Kyle wants
+      it in a dedicated session.
+- [ ] ~~Consumer-app mode~~ folded into the greenfield-gate finding above (same root: registry
+      weighting vs the one TLD that matters).
 - [ ] OAuth subprocess overhead is ~5x slower than API — **confirmed empirically 2026-06-23:**
       the ranking phase alone took 5m10s on a 40-candidate run. Subprocess pooling is the fix.
 
