@@ -31,11 +31,17 @@
 
 ## What's Next
 
-- [ ] Phase 2: Claude skill wrapper at `~/.claude/skills/weavenames/`
-- [ ] Real dogfood: name something concrete (not a test description)
+- [x] Phase 2: Claude skill wrapper at `~/.claude/skills/weavenames/` (shipped, SKILL.md 2026-06-11)
+- [x] Real dogfood: ran 2026-06-23 against the `screen-draw` macOS tool. Pipeline green end to
+      end (60 availability checks / 5 registries + USPTO + 40-candidate ELO). No name beat the
+      descriptive working slug, so no rename. Report proved health, that was the point.
 - [ ] Address watch-outs from Alfred (silent TIE on judge failure, missing buy-links in report, crates.io/Docker Hub not yet implemented)
 - [ ] Bump to v0.1.0 and publish real pipeline to PyPI/npm (replace stub)
-- [ ] OAuth subprocess overhead is ~5x slower than API — consider subprocess pooling in Phase 3 if it bugs
+- [ ] **Consumer-app mode (NEW, surfaced by the 2026-06-23 dogfood).** Pointed at a `.dmg` Mac
+      app, the PyPI/npm/GitHub columns are noise, only .com + trademark + App-Store-name matter.
+      Add a target-type flag that weights domain/TM and drops package registries from scoring.
+- [ ] OAuth subprocess overhead is ~5x slower than API — **confirmed empirically 2026-06-23:**
+      the ranking phase alone took 5m10s on a 40-candidate run. Subprocess pooling is the fix.
 
 ## Blockers
 
